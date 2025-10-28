@@ -597,6 +597,84 @@
     </div>
   </div>
 
+  <!-- Edit Record Modal -->
+  <div class="modal-backdrop" id="editRecordModalBackdrop"></div>
+  <div class="modal" id="editRecordModal" style="max-width: 36rem;">
+    <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4">
+      <div class="bg-blue-600 text-white px-6 py-4 rounded-t-lg flex items-center justify-between">
+        <h3 class="text-lg font-semibold">Edit COC Record</h3>
+        <button id="closeEditRecordModalBtn" class="text-white hover:text-gray-200 transition-colors">
+          <i class="bi bi-x-lg text-xl"></i>
+        </button>
+      </div>
+      <div class="modal-body p-6">
+        <p class="text-sm text-gray-600 mb-4">Update the time entries for this record. The system will automatically recalculate the COC earned.</p>
+
+        <!-- Record Info -->
+        <div class="bg-gray-50 p-3 rounded mb-4 text-sm">
+          <p><strong>Date:</strong> <span id="editRecordDate"></span></p>
+          <p><strong>Day Type:</strong> <span id="editRecordDayType"></span></p>
+        </div>
+
+        <!-- Time Inputs -->
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">AM Shift (In / Out)</label>
+            <div class="flex items-center gap-2">
+              <input type="time" id="editAmIn" class="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" step="900">
+              <span class="text-xs text-gray-500">to</span>
+              <input type="time" id="editAmOut" class="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" step="900">
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">PM Shift (In / Out)</label>
+            <div class="flex items-center gap-2">
+              <input type="time" id="editPmIn" class="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" step="900">
+              <span class="text-xs text-gray-500">to</span>
+              <input type="time" id="editPmOut" class="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" step="900">
+            </div>
+          </div>
+
+          <!-- Calculated Result -->
+          <div id="editRecordResult" class="hidden bg-blue-50 border border-blue-200 rounded p-3">
+            <div class="grid grid-cols-3 gap-3 text-center text-xs">
+              <div>
+                <div class="text-gray-600">Hours Worked</div>
+                <div id="editHoursWorked" class="font-semibold text-blue-600 text-sm">-</div>
+              </div>
+              <div>
+                <div class="text-gray-600">Multiplier</div>
+                <div id="editMultiplier" class="font-semibold text-purple-600 text-sm">-</div>
+              </div>
+              <div>
+                <div class="text-gray-600">COC Earned</div>
+                <div id="editCocEarned" class="font-bold text-green-600 text-sm">-</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Reason for Update -->
+          <div>
+            <label for="editReasonInput" class="block text-sm font-medium text-gray-700 mb-1">
+              Reason for Update <span class="text-red-500">*</span>
+            </label>
+            <textarea id="editReasonInput" rows="3" class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Explain why this record is being updated..."></textarea>
+            <p id="editReasonError" class="text-red-600 text-sm mt-1 hidden">Please provide a reason for the update.</p>
+          </div>
+        </div>
+      </div>
+      <div class="px-6 pb-6 flex justify-end gap-3">
+        <button id="editRecordCancelBtn" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 transition-colors">
+          Cancel
+        </button>
+        <button id="editRecordSaveBtn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+          Save Changes
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- PDF Generation Spinner -->
   <div id="spinnerBackdrop" class="spinner-backdrop"></div>
   <div id="spinnerModal" class="spinner-modal">
@@ -730,6 +808,115 @@
           btn.prop('disabled', false).html('Delete Record');
         })
         .apiDeleteCOCRecord(recordId, reason);
+    }
+
+    // --- Edit Record Modal functions ---
+    let currentRecordToEdit = null;
+
+    function showEditRecordModal(recordId) {
+      currentRecordToEdit = recordId;
+      $('#editReasonInput').val('');
+      $('#editReasonError').addClass('hidden');
+      $('#editRecordResult').addClass('hidden');
+
+      // Fetch record data
+      google.script.run
+        .withSuccessHandler(function(record) {
+          $('#editRecordDate').text(record.dateRendered);
+          $('#editRecordDayType').text(record.dayType);
+          $('#editAmIn').val(record.amIn);
+          $('#editAmOut').val(record.amOut);
+          $('#editPmIn').val(record.pmIn);
+          $('#editPmOut').val(record.pmOut);
+
+          // Show initial calculation if times exist
+          if (record.amIn || record.pmIn) {
+            recalculateEditPreview();
+          }
+
+          $('#editRecordModalBackdrop, #editRecordModal').addClass('show');
+        })
+        .withFailureHandler(function(error) {
+          showModal('Error', error && error.message ? error.message : String(error), 'danger');
+        })
+        .apiGetCOCRecord(recordId);
+    }
+
+    function closeEditRecordModal() {
+      $('#editRecordModalBackdrop, #editRecordModal').removeClass('show');
+      currentRecordToEdit = null;
+    }
+
+    function recalculateEditPreview() {
+      const amIn = $('#editAmIn').val();
+      const amOut = $('#editAmOut').val();
+      const pmIn = $('#editPmIn').val();
+      const pmOut = $('#editPmOut').val();
+
+      if (!amIn && !amOut && !pmIn && !pmOut) {
+        $('#editRecordResult').addClass('hidden');
+        return;
+      }
+
+      // Get the year, month, and day from the current record
+      google.script.run
+        .withSuccessHandler(function(record) {
+          const year = new Date(record.dateRendered).getFullYear() || new Date().getFullYear();
+          const month = new Date(record.dateRendered).getMonth() + 1 || new Date().getMonth() + 1;
+          const day = record.day || 1;
+
+          // Calculate with the API
+          google.script.run
+            .withSuccessHandler(function(result) {
+              $('#editRecordResult').removeClass('hidden');
+              $('#editHoursWorked').text(result.hoursWorked.toFixed(2));
+              $('#editMultiplier').text(result.multiplier.toFixed(1) + 'x');
+              $('#editCocEarned').text(result.cocEarned.toFixed(2) + ' hrs');
+            })
+            .withFailureHandler(function(error) {
+              $('#editRecordResult').addClass('hidden');
+            })
+            .apiCalculateOvertimeForDate(year, month, day, amIn, amOut, pmIn, pmOut);
+        })
+        .apiGetCOCRecord(currentRecordToEdit);
+    }
+
+    function confirmEditRecord() {
+      const reason = $('#editReasonInput').val().trim();
+      if (!reason) {
+        $('#editReasonError').removeClass('hidden');
+        return;
+      }
+      $('#editReasonError').addClass('hidden');
+
+      const recordId = currentRecordToEdit;
+      if (!recordId) {
+        showModal('Error', 'No record selected for editing.', 'danger');
+        closeEditRecordModal();
+        return;
+      }
+
+      const amIn = $('#editAmIn').val();
+      const amOut = $('#editAmOut').val();
+      const pmIn = $('#editPmIn').val();
+      const pmOut = $('#editPmOut').val();
+
+      const btn = $('#editRecordSaveBtn');
+      btn.prop('disabled', true).html('<i class="bi bi-arrow-repeat animate-spin"></i> Saving...');
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          showModal('Success', 'COC record has been updated successfully. New COC earned: ' + result.updatedRecord.cocEarned.toFixed(2) + ' hours.', 'success');
+          btn.prop('disabled', false).html('Save Changes');
+          closeEditRecordModal();
+          loadExistingRecords();
+          updateEmployeeInfo();
+        })
+        .withFailureHandler(function(error) {
+          showModal('Error', error && error.message ? error.message : String(error), 'danger');
+          btn.prop('disabled', false).html('Save Changes');
+        })
+        .apiUpdateCOCRecord(recordId, amIn, amOut, pmIn, pmOut, reason);
     }
 
     // --- Helper functions (getDaysInMonth, validateDayNumber, checkDuplicateDay, showDuplicateModal, updateEntryCounter, loadEmployees, loadEmployeeCOCStats, updateEmployeeInfo, validateCOCLimits, loadMonthOptions, loadYearOptions, updateSelectedMonthYearDisplay) remain unchanged ---
@@ -1464,11 +1651,11 @@
           }
 
           records.forEach(record => {
-            existingRecordDates.push(new Date(record.displayDate).getDate());
+            existingRecordDates.push(record.day); // Use day field directly to avoid timezone issues
 
             const actionsCell = !record.certificateUrl
               ? `<div class="flex gap-2 justify-center">
-                   <button class="edit-record-btn px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50" data-record-id="${record.recordId}" title="Edit Record" disabled>
+                   <button class="edit-record-btn px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600" data-record-id="${record.recordId}" title="Edit Record">
                      <i class="bi bi-pencil-square"></i> Edit
                    </button>
                    <button class="delete-record-btn px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600" data-record-id="${record.recordId}" title="Delete Record">
@@ -1491,7 +1678,7 @@
             });
 
             row.find('.edit-record-btn').on('click', function() {
-              showModal('Info', 'Edit functionality is not yet available. Please delete and re-create the record if needed.', 'info');
+              showEditRecordModal(record.recordId);
             });
 
             body.append(row);
@@ -1794,6 +1981,13 @@
       $('#closeDeleteRecordModalBtn, #deleteRecordCancelBtn').on('click', closeDeleteRecordModal);
       $('#deleteRecordConfirmBtn').on('click', confirmDeleteRecord);
       $('#deleteRecordModalBackdrop').on('click', closeDeleteRecordModal);
+
+      $('#closeEditRecordModalBtn, #editRecordCancelBtn').on('click', closeEditRecordModal);
+      $('#editRecordSaveBtn').on('click', confirmEditRecord);
+      $('#editRecordModalBackdrop').on('click', closeEditRecordModal);
+
+      // Add change listeners for time inputs to trigger real-time recalculation
+      $('#editAmIn, #editAmOut, #editPmIn, #editPmOut').on('change', recalculateEditPreview);
 
     };
 

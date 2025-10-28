@@ -1189,74 +1189,45 @@ function checkEmployeeFIFO(employeeId, detailData, ctoData) {
 */
 function calculateOvertimeForDate(date, amIn, amOut, pmIn, pmOut) {
   const settings = getSettings();
-  const TIME_ZONE = getScriptTimeZone(); // Added this
+  const TIME_ZONE = getScriptTimeZone();
 
-  // --- MODIFICATION ---
-  // Call the new helper function to get the day type
-  const dayType = getDayType(date);
-  // --- END MODIFICATION ---
+  // Get day type and multiplier using enhanced function
+  const dayInfo = getDayTypeEnhanced(date);
+  const dayType = dayInfo.dayType;
+  const multiplier = dayInfo.multiplier;
 
   let hoursWorked = 0;
-  let multiplier = 1.0;
-  // Helper to convert time string to a Date on same day
-  function parseTime(timeStr) {
+
+  // Helper to convert time string (HH:mm) to minutes
+  function timeToMinutes(timeStr) {
     if (!timeStr) return null;
     const parts = timeStr.split(':');
     const h = parseInt(parts[0], 10);
     const m = parseInt(parts[1], 10);
-    const d = new Date(date);
-    d.setHours(h, m, 0, 0);
-    return d;
+    return h * 60 + m;
   }
-  const amStart = parseTime(amIn);
-  const amEnd = parseTime(amOut);
-  const pmStart = parseTime(pmIn);
-  const pmEnd = parseTime(pmOut);
-  if (dayType === 'Weekday') {
-    // Weekday overtime from 5:00 PM to 7:00 PM
-    const otStart = new Date(date);
-    otStart.setHours(17, 0, 0, 0);
-    const otEnd = new Date(date);
-    otEnd.setHours(19, 0, 0, 0);
-    const outTime = pmEnd;
-    if (outTime && outTime > otStart) {
-      let endTime = outTime > otEnd ? otEnd : outTime;
-      const ms = endTime.getTime() - otStart.getTime();
-      const hours = ms / (1000 * 60 * 60);
-      hoursWorked = Math.min(Math.max(hours, 0), 2);
+
+  // Calculate AM hours if both AM In and AM Out are provided
+  if (amIn && amOut) {
+    const amInMins = timeToMinutes(amIn);
+    const amOutMins = timeToMinutes(amOut);
+    if (amInMins !== null && amOutMins !== null && amOutMins > amInMins) {
+      hoursWorked += (amOutMins - amInMins) / 60.0;
     }
-    multiplier = 1.0;
-  } else {
-    // Weekend/Holiday schedule
-    const morningStart = new Date(date);
-    morningStart.setHours(8, 0, 0, 0);
-    const morningEnd = new Date(date);
-    morningEnd.setHours(12, 0, 0, 0);
-    const afternoonStart = new Date(date);
-    afternoonStart.setHours(13, 0, 0, 0);
-    const afternoonEnd = new Date(date);
-    afternoonEnd.setHours(17, 0, 0, 0);
-    // Morning block
-    if (amStart && amEnd) {
-      let startTime = amStart < morningStart ? morningStart : amStart;
-      let endTime = amEnd > morningEnd ? morningEnd : amEnd;
-      const ms = endTime.getTime() - startTime.getTime();
-      if (ms > 0) {
-        hoursWorked += ms / (1000 * 60 * 60);
-      }
-    }
-    // Afternoon block
-    if (pmStart && pmEnd) {
-      let startTime = pmStart < afternoonStart ? afternoonStart : pmStart;
-      let endTime = pmEnd > afternoonEnd ? afternoonEnd : pmEnd;
-      const ms = endTime.getTime() - startTime.getTime();
-      if (ms > 0) {
-        hoursWorked += ms / (1000 * 60 * 60);
-      }
-    }
-    multiplier = 1.5;
   }
+
+  // Calculate PM hours if both PM In and PM Out are provided
+  if (pmIn && pmOut) {
+    const pmInMins = timeToMinutes(pmIn);
+    const pmOutMins = timeToMinutes(pmOut);
+    if (pmInMins !== null && pmOutMins !== null && pmOutMins > pmInMins) {
+      hoursWorked += (pmOutMins - pmInMins) / 60.0;
+    }
+  }
+
+  // Calculate COC earned: total hours * multiplier
   const cocEarned = hoursWorked * multiplier;
+
   return {
     dayType: dayType,
     hoursWorked: hoursWorked,

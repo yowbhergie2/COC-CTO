@@ -220,7 +220,7 @@ function getDayTypeEnhanced(date) {
   
   if (dow === 0 || dow === 6) {
     dayType = 'Weekend';
-    multiplier = 1.5;
+    multiplier = 2.0; // Fixed: Weekend should be 2.0x multiplier
   }
 
   // Check holidays sheet for overrides
@@ -229,17 +229,17 @@ function getDayTypeEnhanced(date) {
   if (holidaysSheet) {
     const holData = holidaysSheet.getDataRange().getValues();
     const target = Utilities.formatDate(date, TIME_ZONE, 'yyyy-MM-dd');
-    
+
     for (let i = 1; i < holData.length; i++) {
       const holDate = holData[i][0];
       const holType = holData[i][1];
       const halfdayTime = holData[i][3];
       const suspensionTime = holData[i][4];
-      
+
       if (holDate && Utilities.formatDate(new Date(holDate), TIME_ZONE, 'yyyy-MM-dd') === target) {
         if (holType === 'Regular') {
           dayType = 'Regular Holiday';
-          multiplier = 1.5;
+          multiplier = 2.0; // Fixed: Regular Holiday should be 2.0x multiplier
         } else if (holType === 'Special Non-Working') {
           dayType = 'Special Non-Working';
           multiplier = 1.5;
