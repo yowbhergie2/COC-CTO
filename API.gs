@@ -403,6 +403,205 @@ function apiDeleteCOCRecord(recordId, reason) {
 
 
 /**
+ * API: Update a COC record (edit functionality)
+ * Allows editing time entries and recalculates COC earned.
+ * Logs changes in audit trail.
+ *
+ * @param {string} recordId - The record ID to update
+ * @param {string} amIn - Updated AM In time (HH:mm format)
+ * @param {string} amOut - Updated AM Out time (HH:mm format)
+ * @param {string} pmIn - Updated PM In time (HH:mm format)
+ * @param {string} pmOut - Updated PM Out time (HH:mm format)
+ * @param {string} reason - Reason for update (required)
+ * @returns {Object} Result object with updated record data
+ */
+function apiUpdateCOCRecord(recordId, amIn, amOut, pmIn, pmOut, reason) {
+  if (!recordId) throw new Error("Record ID is required.");
+  if (!reason) throw new Error("Reason for update is required.");
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+
+  try {
+    const db = SpreadsheetApp.openById(DATABASE_ID);
+    const recordsSheet = db.getSheetByName('COC_Records');
+    const data = recordsSheet.getDataRange().getValues();
+
+    const currentUser = getCurrentUserEmail();
+    const now = new Date();
+
+    // Find the record
+    let rowIndex = -1;
+    let recordData = null;
+
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][RECORD_COLS.RECORD_ID] === recordId) {
+        rowIndex = i;
+        recordData = data[i];
+        break;
+      }
+    }
+
+    if (rowIndex === -1) {
+      throw new Error("Record not found.");
+    }
+
+    // Check if record is already certificated
+    const certificateId = recordData[RECORD_COLS.CERTIFICATE_ID];
+    if (certificateId) {
+      throw new Error("Cannot edit a record that has already been certificated. Please contact administrator if you need to modify a certificated record.");
+    }
+
+    // Check current status
+    const currentStatus = recordData[RECORD_COLS.STATUS];
+    if (currentStatus === STATUS_CANCELLED) {
+      throw new Error("Cannot edit a cancelled record.");
+    }
+
+    // Store old values for audit trail
+    const oldAmIn = recordData[RECORD_COLS.AM_IN];
+    const oldAmOut = recordData[RECORD_COLS.AM_OUT];
+    const oldPmIn = recordData[RECORD_COLS.PM_IN];
+    const oldPmOut = recordData[RECORD_COLS.PM_OUT];
+    const oldHoursWorked = recordData[RECORD_COLS.HOURS_WORKED];
+    const oldCocEarned = recordData[RECORD_COLS.COC_EARNED];
+
+    // Get the date from the record
+    const dateRendered = new Date(recordData[RECORD_COLS.DATE_RENDERED]);
+
+    // Recalculate overtime with new times
+    const result = calculateOvertimeForDate(dateRendered, amIn, amOut, pmIn, pmOut);
+
+    // Update the record
+    const row = rowIndex + 1; // Convert to 1-based index
+    recordsSheet.getRange(row, RECORD_COLS.AM_IN + 1).setValue(amIn || '');
+    recordsSheet.getRange(row, RECORD_COLS.AM_OUT + 1).setValue(amOut || '');
+    recordsSheet.getRange(row, RECORD_COLS.PM_IN + 1).setValue(pmIn || '');
+    recordsSheet.getRange(row, RECORD_COLS.PM_OUT + 1).setValue(pmOut || '');
+    recordsSheet.getRange(row, RECORD_COLS.HOURS_WORKED + 1).setValue(result.hoursWorked);
+    recordsSheet.getRange(row, RECORD_COLS.MULTIPLIER + 1).setValue(result.multiplier);
+    recordsSheet.getRange(row, RECORD_COLS.COC_EARNED + 1).setValue(result.cocEarned);
+    recordsSheet.getRange(row, RECORD_COLS.LAST_MODIFIED + 1).setValue(now);
+    recordsSheet.getRange(row, RECORD_COLS.MODIFIED_BY + 1).setValue(currentUser);
+
+    // Update COC_Balance_Detail if it exists
+    const detailSheet = db.getSheetByName('COC_Balance_Detail');
+    if (detailSheet) {
+      const detailData = detailSheet.getDataRange().getValues();
+      for (let i = 1; i < detailData.length; i++) {
+        if (detailData[i][DETAIL_COLS.RECORD_ID] === recordId) {
+          const detailRow = i + 1;
+          detailSheet.getRange(detailRow, DETAIL_COLS.COC_EARNED + 1).setValue(result.cocEarned);
+          detailSheet.getRange(detailRow, DETAIL_COLS.BALANCE_REMAINING + 1).setValue(result.cocEarned);
+          break;
+        }
+      }
+    }
+
+    // Create audit trail entry in ledger
+    const ledgerSheet = db.getSheetByName('COC_Ledger');
+    if (ledgerSheet) {
+      const employeeId = recordData[RECORD_COLS.EMPLOYEE_ID];
+      const employeeName = recordData[RECORD_COLS.EMPLOYEE_NAME];
+      const monthYear = recordData[RECORD_COLS.MONTH_YEAR];
+
+      const ledgerId = generateUniqueId("LDG-");
+      const auditMessage = `COC Record Updated. Old: AM(${oldAmIn}-${oldAmOut}) PM(${oldPmIn}-${oldPmOut}) = ${oldHoursWorked.toFixed(2)}h × ${recordData[RECORD_COLS.MULTIPLIER]}x = ${oldCocEarned.toFixed(2)} COC | New: AM(${amIn || 'none'}-${amOut || 'none'}) PM(${pmIn || 'none'}-${pmOut || 'none'}) = ${result.hoursWorked.toFixed(2)}h × ${result.multiplier}x = ${result.cocEarned.toFixed(2)} COC | Reason: ${reason}`;
+
+      const ledgerRow = new Array(15).fill('');
+      ledgerRow[LEDGER_COLS.LEDGER_ID] = ledgerId;
+      ledgerRow[LEDGER_COLS.EMPLOYEE_ID] = employeeId;
+      ledgerRow[LEDGER_COLS.EMPLOYEE_NAME] = employeeName;
+      ledgerRow[LEDGER_COLS.TRANSACTION_DATE] = now;
+      ledgerRow[LEDGER_COLS.TRANSACTION_TYPE] = 'COC Updated';
+      ledgerRow[LEDGER_COLS.REFERENCE_ID] = recordId;
+      ledgerRow[LEDGER_COLS.COC_EARNED] = result.cocEarned - oldCocEarned; // Change in COC
+      ledgerRow[LEDGER_COLS.CTO_USED] = 0;
+      ledgerRow[LEDGER_COLS.MONTH_YEAR_EARNED] = monthYear;
+      ledgerRow[LEDGER_COLS.PROCESSED_BY] = currentUser;
+      ledgerRow[14] = auditMessage; // Remarks column
+
+      ledgerSheet.getRange(ledgerSheet.getLastRow() + 1, 1, 1, ledgerRow.length).setValues([ledgerRow]);
+    }
+
+    Logger.log(`COC Record ${recordId} updated by ${currentUser}. Reason: ${reason}`);
+
+    return {
+      success: true,
+      message: "Record updated successfully.",
+      updatedRecord: {
+        recordId: recordId,
+        amIn: amIn || '',
+        amOut: amOut || '',
+        pmIn: pmIn || '',
+        pmOut: pmOut || '',
+        hoursWorked: result.hoursWorked,
+        multiplier: result.multiplier,
+        cocEarned: result.cocEarned,
+        dayType: result.dayType
+      }
+    };
+
+  } catch (e) {
+    Logger.log(`Error in apiUpdateCOCRecord: ${e}`);
+    throw new Error(`Failed to update record: ${e.message}`);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+
+/**
+ * API: Get a specific COC record by ID
+ * Used to pre-fill the edit modal
+ *
+ * @param {string} recordId - The record ID to fetch
+ * @returns {Object} Record data
+ */
+function apiGetCOCRecord(recordId) {
+  if (!recordId) throw new Error("Record ID is required.");
+
+  try {
+    const db = SpreadsheetApp.openById(DATABASE_ID);
+    const recordsSheet = db.getSheetByName('COC_Records');
+    const data = recordsSheet.getDataRange().getValues();
+
+    // Find the record
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][RECORD_COLS.RECORD_ID] === recordId) {
+        const recordData = data[i];
+        const dateRendered = new Date(recordData[RECORD_COLS.DATE_RENDERED]);
+
+        return {
+          recordId: recordId,
+          employeeId: recordData[RECORD_COLS.EMPLOYEE_ID],
+          employeeName: recordData[RECORD_COLS.EMPLOYEE_NAME],
+          dateRendered: Utilities.formatDate(dateRendered, "GMT+8", "MMM dd, yyyy"),
+          day: dateRendered.getDate(),
+          dayType: recordData[RECORD_COLS.DAY_TYPE],
+          amIn: recordData[RECORD_COLS.AM_IN] || '',
+          amOut: recordData[RECORD_COLS.AM_OUT] || '',
+          pmIn: recordData[RECORD_COLS.PM_IN] || '',
+          pmOut: recordData[RECORD_COLS.PM_OUT] || '',
+          hoursWorked: parseFloat(recordData[RECORD_COLS.HOURS_WORKED] || 0),
+          multiplier: parseFloat(recordData[RECORD_COLS.MULTIPLIER] || 0),
+          cocEarned: parseFloat(recordData[RECORD_COLS.COC_EARNED] || 0),
+          certificateId: recordData[RECORD_COLS.CERTIFICATE_ID],
+          status: recordData[RECORD_COLS.STATUS]
+        };
+      }
+    }
+
+    throw new Error("Record not found.");
+
+  } catch (e) {
+    Logger.log(`Error in apiGetCOCRecord: ${e}`);
+    throw new Error(`Failed to get record: ${e.message}`);
+  }
+}
+
+
+/**
  * API: Delete a holiday
  * @param {number} rowNumber The row number to delete
  * @return {Object} Success result
@@ -1538,10 +1737,12 @@ function apiListCOCRecordsForMonth(employeeId, month, year) {
       const recordId = r[RECORD_COLS.RECORD_ID];
       const certificateId = r[RECORD_COLS.CERTIFICATE_ID];
       const certInfo = certMap.get(certificateId);
+      const dateRendered = new Date(r[RECORD_COLS.DATE_RENDERED]);
 
       return {
         recordId: recordId,
-        displayDate: Utilities.formatDate(new Date(r[RECORD_COLS.DATE_RENDERED]), "GMT+8", "MMM dd, yyyy"),
+        displayDate: Utilities.formatDate(dateRendered, "GMT+8", "MMM dd, yyyy"),
+        day: dateRendered.getDate(), // Add day number to prevent timezone issues
         dayType: r[RECORD_COLS.DAY_TYPE],
         hoursWorked: parseFloat(r[RECORD_COLS.HOURS_WORKED] || 0),
         cocEarned: parseFloat(r[RECORD_COLS.COC_EARNED] || 0),
