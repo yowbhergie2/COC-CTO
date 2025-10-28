@@ -1188,59 +1188,126 @@ function checkEmployeeFIFO(employeeId, detailData, ctoData) {
  * and COC earned.
 */
 function calculateOvertimeForDate(date, amIn, amOut, pmIn, pmOut) {
+  // Get settings from the 'Settings' sheet (assuming getSettings exists in HelperFunctions.gs)
   const settings = getSettings();
+  // Get the script's timezone (assuming getScriptTimeZone exists in HelperFunctions.gs)
   const TIME_ZONE = getScriptTimeZone();
 
-  // Get day type and multiplier using enhanced function
+  // Determine the day type and base multiplier using the enhanced function
+  // (assuming getDayTypeEnhanced exists in HelperFunctions.gs)
   const dayInfo = getDayTypeEnhanced(date);
   const dayType = dayInfo.dayType;
-  const multiplier = dayInfo.multiplier;
+  const multiplier = dayInfo.multiplier; // This will be 1.0 for Weekday, 1.5 for Weekend/Holiday
 
-  let hoursWorked = 0;
+  let hoursWorked = 0; // Initialize total hours worked
 
-  // Helper to convert time string (HH:mm) to minutes
+  /**
+   * Helper function to convert a time string (HH:mm) to the total number of minutes from midnight.
+   * Returns null if the input string is invalid or empty.
+   * @param {string} timeStr Time string in HH:mm format.
+   * @return {number|null} Total minutes from midnight or null.
+   */
   function timeToMinutes(timeStr) {
-    if (!timeStr) return null;
+    if (!timeStr) return null; // Return null for empty or null input
     const parts = timeStr.split(':');
+    // Ensure exactly two parts and both are numbers
+    if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) return null;
     const h = parseInt(parts[0], 10);
     const m = parseInt(parts[1], 10);
-    return h * 60 + m;
+    // Basic validation for hours and minutes range
+    if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+    return h * 60 + m; // Calculate total minutes
   }
 
-  // Calculate AM hours if both AM In and AM Out are provided
-  if (amIn && amOut) {
-    const amInMins = timeToMinutes(amIn);
-    const amOutMins = timeToMinutes(amOut);
+  // Convert provided times to minutes
+  const amInMins = timeToMinutes(amIn);
+  const amOutMins = timeToMinutes(amOut);
+  const pmInMins = timeToMinutes(pmIn);
+  const pmOutMins = timeToMinutes(pmOut);
+
+  // --- Overtime Calculation Logic ---
+
+  // Check if it's a Weekday
+  if (dayType === 'Weekday') {
+    // Define the valid overtime window for weekdays (5 PM to 7 PM)
+    const weekdayStartMins = 17 * 60; // 5:00 PM
+    const weekdayEndMins = 19 * 60;   // 7:00 PM
+
+    let weekdayOvertimeMins = 0;
+
+    // Calculate overlap within the 5 PM - 7 PM window for AM times (unlikely but possible if data entry allows)
     if (amInMins !== null && amOutMins !== null && amOutMins > amInMins) {
-      hoursWorked += (amOutMins - amInMins) / 60.0;
+      const start = Math.max(amInMins, weekdayStartMins); // Find the later start time
+      const end = Math.min(amOutMins, weekdayEndMins);   // Find the earlier end time
+      if (end > start) { // Check if there is an overlap
+        weekdayOvertimeMins += (end - start);
+      }
     }
-  }
 
-  // Calculate PM hours if both PM In and PM Out are provided
-  if (pmIn && pmOut) {
-    const pmInMins = timeToMinutes(pmIn);
-    const pmOutMins = timeToMinutes(pmOut);
+    // Calculate overlap within the 5 PM - 7 PM window for PM times
     if (pmInMins !== null && pmOutMins !== null && pmOutMins > pmInMins) {
-      hoursWorked += (pmOutMins - pmInMins) / 60.0;
+      const start = Math.max(pmInMins, weekdayStartMins); // Find the later start time
+      const end = Math.min(pmOutMins, weekdayEndMins);   // Find the earlier end time
+      if (end > start) { // Check if there is an overlap
+        weekdayOvertimeMins += (end - start);
+      }
     }
+
+    // Convert total valid overtime minutes to hours
+    hoursWorked = weekdayOvertimeMins / 60.0;
+    // Ensure weekday overtime doesn't exceed 2 hours (double-check, though window restricts this)
+    hoursWorked = Math.min(hoursWorked, 2.0);
+
+  } else { // Calculation for Weekends and Holidays (multiplier is already 1.5)
+    // Define standard work block times and lunch break
+    const amBlockStartMins = 8 * 60; // 8:00 AM
+    const amBlockEndMins = 12 * 60;  // 12:00 PM
+    const pmBlockStartMins = 13 * 60; // 1:00 PM
+    const pmBlockEndMins = 17 * 60;  // 5:00 PM
+
+    let nonWeekdayOvertimeMins = 0;
+
+    // Calculate overlap with AM block (8 AM - 12 PM)
+    if (amInMins !== null && amOutMins !== null && amOutMins > amInMins) {
+      const start = Math.max(amInMins, amBlockStartMins);
+      const end = Math.min(amOutMins, amBlockEndMins);
+      if (end > start) {
+        nonWeekdayOvertimeMins += (end - start);
+      }
+    }
+
+    // Calculate overlap with PM block (1 PM - 5 PM)
+    if (pmInMins !== null && pmOutMins !== null && pmOutMins > pmInMins) {
+      const start = Math.max(pmInMins, pmBlockStartMins);
+      const end = Math.min(pmOutMins, pmBlockEndMins);
+      if (end > start) {
+        nonWeekdayOvertimeMins += (end - start);
+      }
+    }
+
+    // Convert total valid overtime minutes to hours
+    hoursWorked = nonWeekdayOvertimeMins / 60.0;
   }
 
-  // Calculate COC earned: total hours * multiplier
+  // --- End Overtime Calculation Logic ---
+
+  // Final calculation of COC earned: total valid hours worked * multiplier
+  // Ensure hoursWorked is not negative due to any potential logic edge cases
+  hoursWorked = Math.max(0, hoursWorked);
   const cocEarned = hoursWorked * multiplier;
 
+  // Return the results including the original times for reference
   return {
-    dayType: dayType,
-    hoursWorked: hoursWorked,
-    multiplier: multiplier,
-    cocEarned: cocEarned,
-    // Added these to pass them to the next step
-    amIn: amIn || '',
-    amOut: amOut || '',
-    pmIn: pmIn || '',
-    pmOut: pmOut || ''
+    dayType: dayType,           // e.g., "Weekday", "Weekend", "Regular Holiday"
+    hoursWorked: hoursWorked,   // Calculated valid overtime hours
+    multiplier: multiplier,     // Multiplier used (1.0 or 1.5)
+    cocEarned: cocEarned,       // Resulting COC hours earned
+    amIn: amIn || '',           // Original AM In time passed to function
+    amOut: amOut || '',         // Original AM Out time passed to function
+    pmIn: pmIn || '',           // Original PM In time passed to function
+    pmOut: pmOut || ''          // Original PM Out time passed to function
   };
 }
-
 
 /**
  * Calculate COC for a specific date with enhanced holiday logic
@@ -1286,5 +1353,4 @@ function calculateCOCForDate(date, hoursWorked, timeIn, timeOut) {
     additionalInfo: dayInfo.additionalInfo
   };
 }
-
 
