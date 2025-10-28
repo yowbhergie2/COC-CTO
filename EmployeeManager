@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Employee Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    window.CURRENT_PAGE = 'employee-manager';
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Bootstrap Icons -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.0/font/bootstrap-icons.min.css" rel="stylesheet" />
+
+  <style>
+    body {
+      font-family: 'Inter', 'Segoe UI', sans-serif;
+      background: #f8f9fa;
+      padding: 15px;
+    }
+    .employee-list {
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      padding: 10px;
+      max-height: 500px;
+      overflow-y: auto;
+    }
+    .employee-item {
+      padding: 10px;
+      border-bottom: 1px solid #e9ecef;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .employee-item:hover {
+      background: #f8f9fa;
+    }
+    .employee-item.active {
+      background: #e9f2ff;
+    }
+    .employee-form {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .section-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 15px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #e9ecef;
+    }
+    
+    /* Custom searchable select */
+    .searchable-select-wrapper {
+      position: relative;
+    }
+    .searchable-select-search {
+      width: 100%;
+      padding: 0.375rem 2.25rem 0.375rem 0.75rem;
+      border: 1px solid #ced4da;
+      border-radius: 0.375rem;
+      background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23343a40' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+      background-repeat: no-repeat;
+      background-position: right 0.75rem center;
+      background-size: 16px 12px;
+    }
+    .searchable-select-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      max-height: 300px;
+      overflow-y: auto;
+      background: white;
+      border: 1px solid #ced4da;
+      border-radius: 0.375rem;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      z-index: 1000;
+      display: none;
+      margin-top: 2px;
+    }
+    .searchable-select-dropdown.show {
+      display: block;
+    }
+    .searchable-select-option {
+      padding: 0.5rem 0.75rem;
+      cursor: pointer;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .searchable-select-option:hover {
+      background: #e9f2ff;
+    }
+    .searchable-select-option.selected {
+      background: #0d6efd;
+      color: white;
+    }
+    .searchable-select-search-input {
+      width: 100%;
+      padding: 0.5rem 0.75rem;
+      border: none;
+      border-bottom: 2px solid #0d6efd;
+      outline: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0"><i class="bi bi-people-fill"></i> Employee Manager</h4>
+  <button type="button" class="btn btn-secondary" onclick="backToDashboard()">
+    <i class="bi bi-arrow-left-circle"></i> Back to Dashboard
+  </button>
+</div>
+  <div class="row g-3">
+    <!-- Left: employee list -->
+    <div class="col-md-4">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="mb-0">Employees</h6>
+        <button type="button" class="btn btn-sm btn-success" id="addNewBtn">
+          <i class="bi bi-person-plus"></i> Add New
+        </button>
+      </div>
+      <input type="text" id="searchBox" class="form-control mb-2" placeholder="Search employees...">
+      <div id="employeeList" class="employee-list">
+        <div class="text-center p-3">
+          <div class="spinner-border spinner-border-sm text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          <div class="mt-2 text-muted small">Loading employees...</div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Right: form -->
+    <div class="col-md-8">
+      <div class="employee-form">
+        <div class="section-title" id="formTitle">Add Employee</div>
+        
+        <!-- COC Stats Card (shows when editing existing employee) -->
+        <div id="cocStatsCard" style="display:none;" class="alert alert-info mb-3">
+          <h6><i class="bi bi-graph-up"></i> Current COC Status</h6>
+          <div class="row text-center">
+            <div class="col-6">
+              <strong>Total Balance</strong><br>
+              <span class="fs-5" id="statsCurrentBalance">0.0 hrs</span><br>
+              <small class="text-muted">Limit: 120 hrs</small><br>
+              <small class="text-success" id="statsAvailable">Available: 0.0 hrs</small>
+            </div>
+            <div class="col-6">
+              <strong>This Month</strong><br>
+              <span class="fs-5" id="statsMonthTotal">0.0 hrs</span><br>
+              <small class="text-muted">Limit: 40 hrs/month</small><br>
+              <small class="text-success" id="statsCanAdd">Can add: 40.0 hrs</small>
+            </div>
+          </div>
+        </div>
+        
+        <div class="row g-3">
+          <!-- Employee Details -->
+          <div class="col-md-6">
+            <label class="form-label">Last Name *</label>
+            <input type="text" id="lastName" class="form-control" required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">First Name *</label>
+            <input type="text" id="firstName" class="form-control" required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Middle Initial</label>
+            <input type="text" id="middleInitial" class="form-control" maxlength="2">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Suffix</label>
+            <select id="suffix" class="form-select">
+              <option value="">None</option>
+              <option value="Jr.">Jr.</option>
+              <option value="Sr.">Sr.</option>
+              <option value="II">II</option>
+              <option value="III">III</option>
+              <option value="IV">IV</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Status</label>
+            <select id="status" class="form-select">
+              <option value="Active">Active</option>
+              <option value="Inactive">Inactive</option>
+            </select>
+          </div>
+          
+          <!-- Position (Custom Searchable Select) -->
+          <div class="col-md-6">
+            <label class="form-label">Position *</label>
+            <div class="searchable-select-wrapper">
+              <input type="text" 
+                     id="positionDisplay" 
+                     class="searchable-select-search" 
+                     placeholder="Select or search position..."
+                     readonly
+                     required>
+              <input type="hidden" id="position">
+              <div id="positionDropdown" class="searchable-select-dropdown">
+                <input type="text" 
+                       id="positionSearch" 
+                       class="searchable-select-search-input" 
+                       placeholder="Search positions...">
+                <div id="positionOptions"></div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Office (Custom Searchable Select) -->
+          <div class="col-md-6">
+            <label class="form-label">Office/Division *</label>
+            <div class="searchable-select-wrapper">
+              <input type="text" 
+                     id="officeDisplay" 
+                     class="searchable-select-search" 
+                     placeholder="Select or search office..."
+                     readonly
+                     required>
+              <input type="hidden" id="office">
+              <div id="officeDropdown" class="searchable-select-dropdown">
+                <input type="text" 
+                       id="officeSearch" 
+                       class="searchable-select-search-input" 
+                       placeholder="Search offices...">
+                <div id="officeOptions"></div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="col-md-6">
+            <label class="form-label">Email *</label>
+            <input type="email" id="email" class="form-control" required>
+          </div>
+          
+          <!-- Total Initial Balance (Read-only) -->
+          <div class="col-md-6">
+            <label class="form-label">Total Initial COC Balance</label>
+            <input type="number" id="initialBalanceTotal" class="form-control" value="0" readonly>
+            <small class="form-text text-muted">Auto-calculated from entries below</small>
+          </div>
+
+          <!-- Initial Balance Breakdown (only for new employees) -->
+          <div class="col-12" id="initialBalanceSection">
+            <h6><i class="bi bi-calendar3"></i> Initial Balance Breakdown</h6>
+            <small class="form-text text-muted d-block mb-2">
+              Add each COC amount and the <strong>Month/Year</strong> it was earned. 
+              This enables proper expiration tracking and FIFO.
+            </small>
+            
+            <!-- Validation Alert (hidden by default) -->
+            <div id="validationAlert" class="alert alert-warning d-none mb-2" role="alert">
+              <i class="bi bi-exclamation-triangle"></i> <span id="validationMessage"></span>
+            </div>
+            
+            <div id="initialBalanceContainer">
+              <!-- Dynamic rows will be added here -->
+            </div>
+            
+            <button type="button" class="btn btn-sm btn-outline-success mt-2" id="addBalanceRowBtn">
+              <i class="bi bi-plus-circle"></i> Add Initial Balance Entry
+            </button>
+            
+            <!-- Summary Stats -->
+            <div class="mt-3 p-2 bg-light rounded">
+              <small>
+                <strong>Summary:</strong> 
+                <span id="summaryStats">Total: 0 hrs</span>
+              </small>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="mt-4 d-flex justify-content-end">
+          <button type="button" class="btn btn-secondary me-2" id="cancelBtn">
+            <i class="bi bi-x-circle"></i> Cancel
+          </button>
+          <button type="button" class="btn btn-primary" id="saveBtn">
+            <i class="bi bi-save"></i> Save
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal fade" id="responseModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header" id="modalHeader">
+          <h5 class="modal-title text-white" id="modalTitle">Result</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body" id="modalBody"></div>
+        <div class="modal-footer">
+          <button class="btn btn-primary" data-bs-dismiss="modal">OK</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Library Scripts -->
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  
+  <script>
+    let employees = [];
+    let currentId = null;
+    let dropdownOptions = { positions: [], offices: [] };
+
+    function showModal(title, message, type) {
+      $('#modalTitle').text(title);
+      $('#modalBody').html(message.replace(/\n/g, '<br>'));
+      const headerClass = type === 'success' ? 'bg-success' : type === 'danger' ? 'bg-danger' : 'bg-warning';
+      $('#modalHeader').removeClass('bg-success bg-danger bg-warning').addClass(headerClass);
+      const modal = new bootstrap.Modal(document.getElementById('responseModal'));
+      modal.show();
+    }
+
+    // Custom Searchable Select Implementation
+    function initSearchableSelect(displayId, hiddenId, dropdownId, searchId, optionsId, items) {
+      const $display = $('#' + displayId);
+      const $hidden = $('#' + hiddenId);
+      const $dropdown = $('#' + dropdownId);
+      const $search = $('#' + searchId);
+      const $options = $('#' + optionsId);
+      
+      // Populate options
+      function renderOptions(filterText = '') {
+        const filtered = items.filter(item => 
+          item.toLowerCase().includes(filterText.toLowerCase())
+        );
+        
+        let html = '';
+        if (filtered.length === 0) {
+          html = '<div class="searchable-select-option text-muted">No results found</div>';
+        } else {
+          filtered.forEach(item => {
+            const selected = $hidden.val() === item ? 'selected' : '';
+            html += `<div class="searchable-select-option ${selected}" data-value="${item}">${item}</div>`;
+          });
+        }
+        
+        $options.html(html);
+      }
+      
+      // Show dropdown
+      $display.on('click', function() {
+        $dropdown.addClass('show');
+        $search.val('').focus();
+        renderOptions('');
+      });
+      
+      // Search
+      $search.on('input', function() {
+        renderOptions($(this).val());
+      });
+      
+      // Select option
+      $options.on('click', '.searchable-select-option', function() {
+        if (!$(this).hasClass('text-muted')) {
+          const value = $(this).attr('data-value');
+          $hidden.val(value);
+          $display.val(value);
+          $dropdown.removeClass('show');
+        }
+      });
+      
+      // Close dropdown when clicking outside
+      $(document).on('click', function(e) {
+        if (!$(e.target).closest('.searchable-select-wrapper').length) {
+          $dropdown.removeClass('show');
+        }
+      });
+      
+      // Initialize
+      renderOptions('');
+    }
+
+    function loadEmployeeList() {
+      google.script.run
+        .withSuccessHandler(function(data) {
+          employees = data;
+          renderList(employees);
+        })
+        .withFailureHandler(function(err) {
+          $('#employeeList').html('<div class="text-center p-3 text-danger">Error loading employees</div>');
+        })
+        .apiListEmployees(true);
+    }
+
+    function renderList(list) {
+      let html = '';
+      list.forEach(emp => {
+        const active = currentId === emp.id ? 'active' : '';
+        html += `
+          <div class="employee-item ${active}" data-id="${emp.id}">
+            <div class="fw-semibold">${emp.fullName}</div>
+            <small class="text-muted">${emp.position}</small>
+          </div>`;
+      });
+      $('#employeeList').html(html);
+    }
+
+    function loadEmployee(employeeId) {
+      google.script.run
+        .withSuccessHandler(function(emp) {
+          if (!emp) {
+            showModal('Error', 'Employee not found', 'danger');
+            return;
+          }
+          
+          currentId = emp.id;
+          $('#formTitle').text('Edit Employee');
+          $('#lastName').val(emp.lastName);
+          $('#firstName').val(emp.firstName);
+          $('#middleInitial').val(emp.middleInitial);
+          $('#suffix').val(emp.suffix);
+          $('#status').val(emp.status);
+          $('#email').val(emp.email);
+          
+          // Set custom selects
+          $('#position').val(emp.position);
+          $('#positionDisplay').val(emp.position);
+          $('#office').val(emp.office);
+          $('#officeDisplay').val(emp.office);
+          
+          $('#initialBalanceTotal').val(emp.initialBalance.toFixed(2));
+          
+          // Hide initial balance breakdown when editing (can't modify after creation)
+          $('#initialBalanceSection').hide();
+          
+          // Load and show COC stats
+          loadEmployeeCOCStats(employeeId);
+          
+          renderList(employees);
+        })
+        .withFailureHandler(function(err) {
+          showModal('Error', err.message || err, 'danger');
+        })
+        .apiGetEmployee(employeeId);
+    }
+    
+    function loadEmployeeCOCStats(employeeId) {
+      google.script.run
+        .withSuccessHandler(function(stats) {
+          // Show the stats card
+          $('#cocStatsCard').show();
+          
+          // Update stats
+          $('#statsCurrentBalance').text(stats.currentBalance.toFixed(1) + ' hrs');
+          $('#statsAvailable').text('Available: ' + stats.balanceRemaining.toFixed(1) + ' hrs');
+          $('#statsMonthTotal').text(stats.currentMonthTotal.toFixed(1) + ' hrs');
+          $('#statsCanAdd').text('Can add: ' + stats.monthlyRemaining.toFixed(1) + ' hrs');
+        })
+        .withFailureHandler(function(err) {
+          console.error('Failed to load COC stats:', err);
+          $('#cocStatsCard').hide();
+        })
+        .apiGetEmployeeCOCStats(employeeId);
+    }
+    
+    function clearForm() {
+      currentId = null;
+      $('#formTitle').text('Add Employee');
+      $('#lastName, #firstName, #middleInitial, #email').val('');
+      $('#suffix').val('');
+      $('#status').val('Active');
+      
+      $('#position').val('');
+      $('#positionDisplay').val('');
+      $('#office').val('');
+      $('#officeDisplay').val('');
+      
+      $('#initialBalanceTotal').val('0');
+      $('#initialBalanceContainer').empty();
+      $('#initialBalanceSection').show();
+      $('#cocStatsCard').hide();
+      $('#validationAlert').addClass('d-none');
+      
+      addInitialBalanceRow();
+      
+      renderList(employees);
+    }
+
+    function addInitialBalanceRow() {
+      const rowHtml = `
+        <div class="row g-2 mb-2 initial-balance-row align-items-center">
+          <div class="col-5">
+            <input type="number" 
+                   class="form-control form-control-sm initial-balance-amount" 
+                   placeholder="Amount (hours)" 
+                   min="0" 
+                   step="0.25">
+          </div>
+          <div class="col-5">
+            <input type="month" 
+                   class="form-control form-control-sm initial-balance-date" 
+                   placeholder="Month/Year">
+          </div>
+          <div class="col-2">
+            <button type="button" class="btn btn-sm btn-danger remove-balance-row-btn w-100">
+              <i class="bi bi-trash"></i>
+            </button>
+          </div>
+        </div>`;
+      $('#initialBalanceContainer').append(rowHtml);
+    }
+
+    function validateInitialBalance() {
+      let hasErrors = false;
+      const errorMessages = [];
+      let totalBalance = 0;
+      const monthlyTotals = {};
+      
+      $('.initial-balance-row').each(function() {
+        const amount = parseFloat($(this).find('.initial-balance-amount').val()) || 0;
+        const monthString = $(this).find('.initial-balance-date').val();
+        
+        if (amount > 0) {
+          totalBalance += amount;
+          
+          if (monthString) {
+            if (!monthlyTotals[monthString]) {
+              monthlyTotals[monthString] = 0;
+            }
+            monthlyTotals[monthString] += amount;
+          }
+        }
+      });
+      
+      // Check total balance limit (120 hours)
+      if (totalBalance > 120) {
+        hasErrors = true;
+        errorMessages.push(`Total balance (${totalBalance.toFixed(2)} hrs) exceeds maximum (120 hrs)`);
+      }
+      
+      // Check monthly limits (40 hours per month)
+      for (const [month, total] of Object.entries(monthlyTotals)) {
+        if (total > 40) {
+          hasErrors = true;
+          errorMessages.push(`${month}: ${total.toFixed(2)} hrs exceeds monthly limit (40 hrs)`);
+        }
+      }
+      
+      // Display validation results
+      if (hasErrors) {
+        $('#validationAlert').removeClass('d-none alert-info').addClass('alert-warning');
+        $('#validationMessage').html('<strong>Validation Issues:</strong><br>' + errorMessages.join('<br>'));
+      } else if (totalBalance > 0) {
+        $('#validationAlert').removeClass('d-none alert-warning').addClass('alert-info');
+        $('#validationMessage').html('<strong>✓ Valid:</strong> All entries are within limits');
+      } else {
+        $('#validationAlert').addClass('d-none');
+      }
+      
+      // Update summary stats
+      updateSummaryStats(totalBalance, monthlyTotals);
+      
+      return !hasErrors;
+    }
+
+    function updateSummaryStats(totalBalance, monthlyTotals) {
+      let statsHtml = `Total: <strong>${totalBalance.toFixed(2)} hrs</strong> / 120 hrs`;
+      
+      if (Object.keys(monthlyTotals).length > 0) {
+        statsHtml += ' | Monthly: ';
+        const monthStats = Object.entries(monthlyTotals)
+          .map(([month, total]) => `${month}: ${total.toFixed(2)}/40 hrs`)
+          .join(', ');
+        statsHtml += monthStats;
+      }
+      
+      $('#summaryStats').html(statsHtml);
+    }
+
+    function updateInitialBalanceTotal() {
+      let total = 0;
+      $('.initial-balance-amount').each(function() {
+        total += parseFloat($(this).val()) || 0;
+      });
+      $('#initialBalanceTotal').val(total.toFixed(2));
+      validateInitialBalance();
+    }
+
+    function saveEmployee() {
+      const data = {
+        lastName: $('#lastName').val().trim(),
+        firstName: $('#firstName').val().trim(),
+        middleInitial: $('#middleInitial').val().trim(),
+        suffix: $('#suffix').val(),
+        position: $('#position').val(),
+        office: $('#office').val(),
+        email: $('#email').val().trim(),
+        status: $('#status').val()
+      };
+      
+      if (!data.lastName || !data.firstName || !data.position || !data.office || !data.email) {
+        showModal('Validation Error', 'Please fill out all required fields (Name, Position, Office, Email).', 'danger');
+        return;
+      }
+      
+      // Process initial balance entries ONLY for new employees
+      if (!currentId) {
+        const initialBalanceEntries = [];
+        let validationError = false;
+
+        $('.initial-balance-row').each(function() {
+          const amount = parseFloat($(this).find('.initial-balance-amount').val()) || 0;
+          const monthString = $(this).find('.initial-balance-date').val();
+
+          if (amount > 0) {
+            if (!monthString) {
+              validationError = true;
+            } else {
+              const parts = monthString.split('-');
+              const lastDay = new Date(parts[0], parts[1], 0).getDate();
+              const fullDate = `${parts[0]}-${parts[1]}-${String(lastDay).padStart(2, '0')}`;
+              initialBalanceEntries.push({ amount: amount, date: fullDate });
+            }
+          }
+        });
+
+        if (validationError) {
+          showModal('Validation Error', 'Each initial balance entry with an amount must have a Month/Year.', 'danger');
+          return;
+        }
+        
+        // Run final validation before submission
+        if (!validateInitialBalance()) {
+          showModal('Validation Error', 'Please fix the validation issues shown above before saving.', 'danger');
+          return;
+        }
+        
+        data.initialBalanceEntries = initialBalanceEntries;
+      }
+
+      $('#saveBtn').prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Saving...');
+      
+      if (!currentId) {
+        google.script.run
+          .withSuccessHandler(function(empId) {
+            showModal('Success', 'Employee added successfully! ID: ' + empId, 'success');
+            $('#saveBtn').prop('disabled', false).html('<i class="bi bi-save"></i> Save');
+            clearForm();
+            loadEmployeeList();
+          })
+          .withFailureHandler(function(err) {
+            showModal('Error', err.message || err, 'danger');
+            $('#saveBtn').prop('disabled', false).html('<i class="bi bi-save"></i> Save');
+          })
+          .apiAddEmployee(data);
+      } else {
+        google.script.run
+          .withSuccessHandler(function() {
+            showModal('Success', 'Employee updated successfully.', 'success');
+            $('#saveBtn').prop('disabled', false).html('<i class="bi bi-save"></i> Save');
+            loadEmployeeList();
+          })
+          .withFailureHandler(function(err) {
+            showModal('Error', err.message || err, 'danger');
+            $('#saveBtn').prop('disabled', false).html('<i class="bi bi-save"></i> Save');
+          })
+          .apiUpdateEmployee(currentId, data);
+      }
+    }
+
+    // Event Handlers
+    $(document).ready(function() {
+      // Load dropdown options
+      google.script.run
+        .withSuccessHandler(function(options) {
+          dropdownOptions = options;
+          initSearchableSelect('positionDisplay', 'position', 'positionDropdown', 'positionSearch', 'positionOptions', options.positions);
+          initSearchableSelect('officeDisplay', 'office', 'officeDropdown', 'officeSearch', 'officeOptions', options.offices);
+        })
+        .apiGetDropdownOptions();
+      
+      // Load employees
+      loadEmployeeList();
+      
+      // Search
+      $('#searchBox').on('input', function() {
+        const term = $(this).val().toLowerCase();
+        const filtered = employees.filter(emp => 
+          emp.fullName.toLowerCase().includes(term) || 
+          emp.position.toLowerCase().includes(term)
+        );
+        renderList(filtered);
+      });
+      
+      // Select employee
+      $('#employeeList').on('click', '.employee-item', function() {
+        loadEmployee($(this).data('id'));
+      });
+      
+      // Add new
+      $('#addNewBtn').on('click', clearForm);
+      
+      // Cancel
+      $('#cancelBtn').on('click', clearForm);
+      
+      // Save
+      $('#saveBtn').on('click', saveEmployee);
+      
+      // Add balance row
+      $('#addBalanceRowBtn').on('click', addInitialBalanceRow);
+      
+      // Remove balance row
+      $('#initialBalanceContainer').on('click', '.remove-balance-row-btn', function() {
+        $(this).closest('.initial-balance-row').remove();
+        updateInitialBalanceTotal();
+      });
+      
+      // Update total on input
+      $('#initialBalanceContainer').on('input', '.initial-balance-amount, .initial-balance-date', function() {
+        updateInitialBalanceTotal();
+      });
+      
+      // Start with one empty row
+      addInitialBalanceRow();
+    });
+  </script>
+
+  <script>
+    // Back to Dashboard function
+    function backToDashboard() {
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run.navigateToPage('Dashboard');
+      } else {
+        window.location.href = 'dashboard_no_sidebar.html';
+      }
+    }
+  </script>
+
+</body>
+</html>
