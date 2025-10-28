@@ -220,7 +220,7 @@ function getDayTypeEnhanced(date) {
   
   if (dow === 0 || dow === 6) {
     dayType = 'Weekend';
-    multiplier = 2.0; // Fixed: Weekend should be 2.0x multiplier
+    multiplier = 1.5; // Weekends are scheduled days off: 1.5x multiplier
   }
 
   // Check holidays sheet for overrides
@@ -239,7 +239,7 @@ function getDayTypeEnhanced(date) {
       if (holDate && Utilities.formatDate(new Date(holDate), TIME_ZONE, 'yyyy-MM-dd') === target) {
         if (holType === 'Regular') {
           dayType = 'Regular Holiday';
-          multiplier = 2.0; // Fixed: Regular Holiday should be 2.0x multiplier
+          multiplier = 1.5; // Holidays are scheduled days off: 1.5x multiplier
         } else if (holType === 'Special Non-Working') {
           dayType = 'Special Non-Working';
           multiplier = 1.5;
